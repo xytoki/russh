@@ -25,7 +25,7 @@ use aws_lc_rs::{
     },
     error::Unspecified,
 };
-use rand::RngCore;
+use rand::{RngCore, rng};
 #[cfg(all(not(feature = "aws-lc-rs"), feature = "ring"))]
 use ring::{
     aead::{
@@ -156,7 +156,7 @@ impl<N: NonceSequence> super::SealingKey for SealingKey<N> {
     }
 
     fn fill_padding(&self, padding_out: &mut [u8]) {
-        rand::thread_rng().fill_bytes(padding_out);
+        rng().fill_bytes(padding_out);
     }
 
     fn tag_len(&self) -> usize {

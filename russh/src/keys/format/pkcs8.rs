@@ -4,6 +4,7 @@ use p256::NistP256;
 use p384::NistP384;
 use p521::NistP521;
 use pkcs8::{AssociatedOid, EncodePrivateKey, PrivateKeyInfo, SecretDocument};
+use rand::rng;
 use spki::ObjectIdentifier;
 use ssh_key::PrivateKey;
 use ssh_key::private::{EcdsaKeypair, Ed25519Keypair, Ed25519PrivateKey, KeypairData};
@@ -118,7 +119,7 @@ pub fn encode_pkcs8_encrypted(
     let pvi = PrivateKeyInfo::try_from(pvi_bytes.as_slice())?;
 
     use rand::RngCore;
-    let mut rng = rand::thread_rng();
+    let mut rng = rng();
     let mut salt = [0; 64];
     rng.fill_bytes(&mut salt);
     let mut iv = [0; 16];

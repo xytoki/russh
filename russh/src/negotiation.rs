@@ -15,7 +15,7 @@
 use std::borrow::Cow;
 
 use log::debug;
-use rand::RngCore;
+use rand::{RngCore, rng};
 use ssh_encoding::{Decode, Encode};
 use ssh_key::{Algorithm, EcdsaCurve, HashAlg, PrivateKey};
 
@@ -424,7 +424,7 @@ pub(crate) fn write_kex(
         msg::KEXINIT.encode(w)?;
 
         let mut cookie = [0; 16];
-        rand::thread_rng().fill_bytes(&mut cookie);
+        rng().fill_bytes(&mut cookie);
         for b in cookie {
             b.encode(w)?;
         }
