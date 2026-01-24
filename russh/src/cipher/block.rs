@@ -18,10 +18,10 @@ use aes::cipher::{IvSizeUser, KeyIvInit, KeySizeUser, StreamCipher};
 #[allow(deprecated)]
 use digest::generic_array::GenericArray as GenericArray_0_14;
 use rand::RngCore;
-use rand::rng;
 
 use super::super::Error;
 use super::PACKET_LENGTH_LEN;
+use crate::keys::key::safe_rng;
 use crate::mac::{Mac, MacAlgorithm};
 
 // Allow deprecated generic-array 0.14 usage until RustCrypto crates (cipher, digest, etc.)
@@ -181,7 +181,7 @@ impl<C: BlockStreamCipher + KeySizeUser + IvSizeUser> super::SealingKey for Seal
     }
 
     fn fill_padding(&self, padding_out: &mut [u8]) {
-        rng().fill_bytes(padding_out);
+        safe_rng().fill_bytes(padding_out);
     }
 
     fn tag_len(&self) -> usize {

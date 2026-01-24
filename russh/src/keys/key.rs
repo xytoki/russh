@@ -42,7 +42,7 @@ pub fn parse_public_key(mut p: &[u8]) -> Result<PublicKey, Error> {
 }
 
 /// Obtain a cryptographic-safe random number generator.
-pub fn safe_rng() -> impl rand::CryptoRng + rand::RngCore {
+pub fn safe_rng() -> impl rand::CryptoRng {
     rng()
 }
 
