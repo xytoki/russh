@@ -5,11 +5,11 @@ use p384::NistP384;
 use p521::NistP521;
 use pkcs8::{AssociatedOid, EncodePrivateKey, PrivateKeyInfo, SecretDocument};
 use spki::ObjectIdentifier;
-use ssh_key::PrivateKey;
 use ssh_key::private::{EcdsaKeypair, Ed25519Keypair, Ed25519PrivateKey, KeypairData};
+use ssh_key::PrivateKey;
 
-use crate::keys::Error;
 use crate::keys::key::safe_rng;
+use crate::keys::Error;
 
 /// Decode a PKCS#8-encoded private key (ASN.1 or X9.62)
 pub fn decode_pkcs8(
@@ -118,7 +118,10 @@ pub fn encode_pkcs8_encrypted(
     let pvi_bytes = encode_pkcs8(key)?;
     let pvi = PrivateKeyInfo::try_from(pvi_bytes.as_slice())?;
 
+    #[cfg(not(feature = "algo-minimal"))]
     use rand::RngCore;
+    #[cfg(feature = "algo-minimal")]
+    use ssh_key::rand_core::RngCore;
     let mut rng = safe_rng();
     let mut salt = [0; 64];
     rng.fill_bytes(&mut salt);

@@ -15,34 +15,78 @@
 
 //!
 //! This module exports kex algorithm names for use with [Preferred].
+#[cfg(not(feature = "algo-minimal"))]
 mod curve25519;
+#[cfg(not(feature = "algo-minimal"))]
 pub mod dh;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 mod ecdh_nistp;
+#[cfg(all(windows, feature = "crypto-cng"))]
+mod ecdh_nistp_cng;
+#[cfg(feature = "pqc-mlkem")]
 mod hybrid_mlkem;
 mod none;
+
+// Stub module so DhGroup type exists even when the full dh module is gated out.
+// This allows the KexAlgorithmImplementor trait to compile unconditionally.
+#[cfg(feature = "algo-minimal")]
+pub mod dh {
+    pub mod groups {
+        /// Stub for DhGroup when full DH is not compiled.
+        #[derive(Debug, Clone)]
+        pub struct DhGroup;
+    }
+}
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::sync::LazyLock;
 
+#[cfg(not(feature = "algo-minimal"))]
 use curve25519::Curve25519KexType;
 use delegate::delegate;
 use dh::groups::DhGroup;
+#[cfg(not(feature = "algo-minimal"))]
 use dh::{
-    DhGexSha1KexType, DhGexSha256KexType, DhGroup1Sha1KexType, DhGroup14Sha1KexType,
-    DhGroup14Sha256KexType, DhGroup15Sha512KexType, DhGroup16Sha512KexType, DhGroup17Sha512KexType,
-    DhGroup18Sha512KexType,
+    DhGexSha1KexType, DhGexSha256KexType, DhGroup14Sha1KexType, DhGroup14Sha256KexType,
+    DhGroup15Sha512KexType, DhGroup16Sha512KexType, DhGroup17Sha512KexType, DhGroup18Sha512KexType,
+    DhGroup1Sha1KexType,
 };
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use digest::Digest;
-use ecdh_nistp::{EcdhNistP256KexType, EcdhNistP384KexType, EcdhNistP521KexType};
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use ecdh_nistp::EcdhNistP256KexType;
+#[cfg(all(
+    not(feature = "algo-minimal"),
+    any(feature = "ring", feature = "aws-lc-rs")
+))]
+use ecdh_nistp::{EcdhNistP384KexType, EcdhNistP521KexType};
 use enum_dispatch::enum_dispatch;
+#[cfg(feature = "pqc-mlkem")]
 use hybrid_mlkem::MlKem768X25519KexType;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use p256::NistP256;
+#[cfg(all(
+    not(feature = "algo-minimal"),
+    any(feature = "ring", feature = "aws-lc-rs")
+))]
 use p384::NistP384;
+#[cfg(all(
+    not(feature = "algo-minimal"),
+    any(feature = "ring", feature = "aws-lc-rs")
+))]
 use p521::NistP521;
+#[cfg(not(feature = "algo-minimal"))]
 use sha1::Sha1;
-use sha2::{Sha256, Sha384, Sha512};
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use sha2::Sha256;
+#[cfg(all(
+    not(feature = "algo-minimal"),
+    any(feature = "ring", feature = "aws-lc-rs")
+))]
+use sha2::{Sha384, Sha512};
 use ssh_encoding::{Encode, Writer};
 use ssh_key::PublicKey;
 
@@ -50,7 +94,7 @@ use crate::cipher::CIPHERS;
 use crate::client::GexParams;
 use crate::mac::{self, MACS};
 use crate::session::{Exchange, NewKeys};
-use crate::{CryptoVec, Error, cipher};
+use crate::{cipher, CryptoVec, Error};
 
 #[derive(Debug)]
 pub(crate) enum SessionKexState<K> {
@@ -127,14 +171,30 @@ pub(crate) enum KexProgress<T> {
 
 #[enum_dispatch(KexAlgorithmImplementor)]
 pub(crate) enum KexAlgorithm {
+    #[cfg(not(feature = "algo-minimal"))]
     DhGroupKexSha1(dh::DhGroupKex<Sha1>),
+    #[cfg(not(feature = "algo-minimal"))]
     DhGroupKexSha256(dh::DhGroupKex<Sha256>),
+    #[cfg(not(feature = "algo-minimal"))]
     DhGroupKexSha512(dh::DhGroupKex<Sha512>),
+    #[cfg(not(feature = "algo-minimal"))]
     Curve25519Kex(curve25519::Curve25519Kex),
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     EcdhNistP256Kex(ecdh_nistp::EcdhNistPKex<NistP256, Sha256>),
+    #[cfg(all(
+        not(feature = "algo-minimal"),
+        any(feature = "ring", feature = "aws-lc-rs")
+    ))]
     EcdhNistP384Kex(ecdh_nistp::EcdhNistPKex<NistP384, Sha384>),
+    #[cfg(all(
+        not(feature = "algo-minimal"),
+        any(feature = "ring", feature = "aws-lc-rs")
+    ))]
     EcdhNistP521Kex(ecdh_nistp::EcdhNistPKex<NistP521, Sha512>),
+    #[cfg(feature = "pqc-mlkem")]
     MlKem768X25519Kex(hybrid_mlkem::MlKem768X25519Kex),
+    #[cfg(all(windows, feature = "crypto-cng"))]
+    CngEcdhNistP256Kex(ecdh_nistp_cng::CngEcdhNistP256Kex),
     None(none::NoneKexAlgorithm),
 }
 
@@ -155,21 +215,26 @@ pub(crate) trait KexAlgorithmImplementor {
         false
     }
 
+    #[cfg_attr(feature = "algo-minimal", allow(dead_code))]
     #[allow(unused_variables)]
     fn client_dh_gex_init(
         &mut self,
-        gex: &GexParams,
+        _gex: &GexParams,
         writer: &mut impl Writer,
     ) -> Result<(), Error> {
         Err(Error::KexInit)
     }
 
+    #[cfg_attr(feature = "algo-minimal", allow(dead_code))]
     #[allow(unused_variables)]
     fn dh_gex_set_group(&mut self, group: DhGroup) -> Result<(), Error> {
         Err(Error::KexInit)
     }
 
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    #[cfg_attr(
+        any(target_arch = "wasm32", feature = "client-minimal"),
+        allow(dead_code)
+    )]
     fn server_dh(&mut self, exchange: &mut Exchange, payload: &[u8]) -> Result<(), Error>;
 
     fn client_dh(
@@ -269,23 +334,48 @@ pub const EXTENSION_OPENSSH_STRICT_KEX_AS_CLIENT: Name = Name("kex-strict-c-v00@
 /// `kex-strict-s-v00@openssh.com`
 pub const EXTENSION_OPENSSH_STRICT_KEX_AS_SERVER: Name = Name("kex-strict-s-v00@openssh.com");
 
+#[cfg(not(feature = "algo-minimal"))]
 const _CURVE25519: Curve25519KexType = Curve25519KexType {};
+#[cfg(not(feature = "algo-minimal"))]
 const _DH_GEX_SHA1: DhGexSha1KexType = DhGexSha1KexType {};
+#[cfg(not(feature = "algo-minimal"))]
 const _DH_GEX_SHA256: DhGexSha256KexType = DhGexSha256KexType {};
+#[cfg(not(feature = "algo-minimal"))]
 const _DH_G1_SHA1: DhGroup1Sha1KexType = DhGroup1Sha1KexType {};
+#[cfg(not(feature = "algo-minimal"))]
 const _DH_G14_SHA1: DhGroup14Sha1KexType = DhGroup14Sha1KexType {};
+#[cfg(not(feature = "algo-minimal"))]
 const _DH_G14_SHA256: DhGroup14Sha256KexType = DhGroup14Sha256KexType {};
+#[cfg(not(feature = "algo-minimal"))]
 const _DH_G15_SHA512: DhGroup15Sha512KexType = DhGroup15Sha512KexType {};
+#[cfg(not(feature = "algo-minimal"))]
 const _DH_G16_SHA512: DhGroup16Sha512KexType = DhGroup16Sha512KexType {};
+#[cfg(not(feature = "algo-minimal"))]
 const _DH_G17_SHA512: DhGroup17Sha512KexType = DhGroup17Sha512KexType {};
+#[cfg(not(feature = "algo-minimal"))]
 const _DH_G18_SHA512: DhGroup18Sha512KexType = DhGroup18Sha512KexType {};
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 const _ECDH_SHA2_NISTP256: EcdhNistP256KexType = EcdhNistP256KexType {};
+#[cfg(all(
+    not(feature = "algo-minimal"),
+    any(feature = "ring", feature = "aws-lc-rs")
+))]
 const _ECDH_SHA2_NISTP384: EcdhNistP384KexType = EcdhNistP384KexType {};
+#[cfg(all(
+    not(feature = "algo-minimal"),
+    any(feature = "ring", feature = "aws-lc-rs")
+))]
 const _ECDH_SHA2_NISTP521: EcdhNistP521KexType = EcdhNistP521KexType {};
+#[cfg(feature = "pqc-mlkem")]
 const _MLKEM768X25519_SHA256: MlKem768X25519KexType = MlKem768X25519KexType {};
+#[cfg(all(windows, feature = "crypto-cng"))]
+const _CNG_ECDH_SHA2_NISTP256: ecdh_nistp_cng::CngEcdhNistP256KexType =
+    ecdh_nistp_cng::CngEcdhNistP256KexType;
 const _NONE: none::NoneKexType = none::NoneKexType {};
 
+#[cfg(not(feature = "algo-minimal"))]
 pub const ALL_KEX_ALGORITHMS: &[&Name] = &[
+    #[cfg(feature = "pqc-mlkem")]
     &MLKEM768X25519_SHA256,
     &CURVE25519,
     &CURVE25519_PRE_RFC_8731,
@@ -304,25 +394,40 @@ pub const ALL_KEX_ALGORITHMS: &[&Name] = &[
     &NONE,
 ];
 
+#[cfg(feature = "algo-minimal")]
+pub const ALL_KEX_ALGORITHMS: &[&Name] = &[&ECDH_SHA2_NISTP256];
+
 pub(crate) static KEXES: LazyLock<HashMap<&'static Name, &(dyn KexType + Send + Sync)>> =
     LazyLock::new(|| {
         let mut h: HashMap<&'static Name, &(dyn KexType + Send + Sync)> = HashMap::new();
+        #[cfg(all(not(feature = "algo-minimal"), feature = "pqc-mlkem"))]
         h.insert(&MLKEM768X25519_SHA256, &_MLKEM768X25519_SHA256);
-        h.insert(&CURVE25519, &_CURVE25519);
-        h.insert(&CURVE25519_PRE_RFC_8731, &_CURVE25519);
-        h.insert(&DH_GEX_SHA1, &_DH_GEX_SHA1);
-        h.insert(&DH_GEX_SHA256, &_DH_GEX_SHA256);
-        h.insert(&DH_G18_SHA512, &_DH_G18_SHA512);
-        h.insert(&DH_G17_SHA512, &_DH_G17_SHA512);
-        h.insert(&DH_G16_SHA512, &_DH_G16_SHA512);
-        h.insert(&DH_G15_SHA512, &_DH_G15_SHA512);
-        h.insert(&DH_G14_SHA256, &_DH_G14_SHA256);
-        h.insert(&DH_G14_SHA1, &_DH_G14_SHA1);
-        h.insert(&DH_G1_SHA1, &_DH_G1_SHA1);
+        #[cfg(not(feature = "algo-minimal"))]
+        {
+            h.insert(&CURVE25519, &_CURVE25519);
+            h.insert(&CURVE25519_PRE_RFC_8731, &_CURVE25519);
+            h.insert(&DH_GEX_SHA1, &_DH_GEX_SHA1);
+            h.insert(&DH_GEX_SHA256, &_DH_GEX_SHA256);
+            h.insert(&DH_G18_SHA512, &_DH_G18_SHA512);
+            h.insert(&DH_G17_SHA512, &_DH_G17_SHA512);
+            h.insert(&DH_G16_SHA512, &_DH_G16_SHA512);
+            h.insert(&DH_G15_SHA512, &_DH_G15_SHA512);
+            h.insert(&DH_G14_SHA256, &_DH_G14_SHA256);
+            h.insert(&DH_G14_SHA1, &_DH_G14_SHA1);
+            h.insert(&DH_G1_SHA1, &_DH_G1_SHA1);
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            h.insert(&ECDH_SHA2_NISTP384, &_ECDH_SHA2_NISTP384);
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            h.insert(&ECDH_SHA2_NISTP521, &_ECDH_SHA2_NISTP521);
+            h.insert(&NONE, &_NONE);
+        }
+        #[cfg(all(
+            not(all(windows, feature = "crypto-cng")),
+            any(feature = "ring", feature = "aws-lc-rs")
+        ))]
         h.insert(&ECDH_SHA2_NISTP256, &_ECDH_SHA2_NISTP256);
-        h.insert(&ECDH_SHA2_NISTP384, &_ECDH_SHA2_NISTP384);
-        h.insert(&ECDH_SHA2_NISTP521, &_ECDH_SHA2_NISTP521);
-        h.insert(&NONE, &_NONE);
+        #[cfg(all(windows, feature = "crypto-cng"))]
+        h.insert(&ECDH_SHA2_NISTP256, &_CNG_ECDH_SHA2_NISTP256);
         assert_eq!(ALL_KEX_ALGORITHMS.len(), h.len());
         h
     });
@@ -336,6 +441,7 @@ thread_local! {
 
 pub(crate) enum SharedSecret {
     Mpint(CryptoVec),
+    #[cfg(feature = "pqc-mlkem")]
     String(CryptoVec),
 }
 
@@ -346,6 +452,7 @@ impl SharedSecret {
         Ok(SharedSecret::Mpint(encoded))
     }
 
+    #[cfg(feature = "pqc-mlkem")]
     pub fn from_string(bytes: &[u8]) -> Result<Self, Error> {
         let mut encoded = CryptoVec::new();
         bytes.encode(&mut encoded)?;
@@ -354,11 +461,14 @@ impl SharedSecret {
 
     pub fn as_bytes(&self) -> &[u8] {
         match self {
-            SharedSecret::Mpint(v) | SharedSecret::String(v) => v.as_ref(),
+            SharedSecret::Mpint(v) => v.as_ref(),
+            #[cfg(feature = "pqc-mlkem")]
+            SharedSecret::String(v) => v.as_ref(),
         }
     }
 }
 
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub(crate) fn compute_keys<D: Digest>(
     shared_secret: Option<&SharedSecret>,
     session_id: &CryptoVec,
@@ -469,6 +579,110 @@ pub(crate) fn compute_keys<D: Digest>(
     })
 }
 
+#[cfg(all(windows, feature = "crypto-cng"))]
+pub(crate) fn compute_keys_sha256_cng(
+    shared_secret: Option<&SharedSecret>,
+    session_id: &CryptoVec,
+    exchange_hash: &CryptoVec,
+    cipher: cipher::Name,
+    remote_to_local_mac: mac::Name,
+    local_to_remote_mac: mac::Name,
+    is_server: bool,
+) -> Result<super::cipher::CipherPair, Error> {
+    let cipher = CIPHERS.get(&cipher).ok_or(Error::UnknownAlgo)?;
+    let remote_to_local_mac = MACS.get(&remote_to_local_mac).ok_or(Error::UnknownAlgo)?;
+    let local_to_remote_mac = MACS.get(&local_to_remote_mac).ok_or(Error::UnknownAlgo)?;
+
+    // https://tools.ietf.org/html/rfc4253#section-7.2
+    BUFFER.with(|buffer| {
+        KEY_BUF.with(|key| {
+            NONCE_BUF.with(|nonce| {
+                MAC_BUF.with(|mac| {
+                    let compute_key = |c, key: &mut CryptoVec, len| -> Result<(), Error> {
+                        let mut buffer = buffer.borrow_mut();
+                        buffer.clear();
+                        key.clear();
+
+                        if let Some(shared) = shared_secret {
+                            buffer.extend(shared.as_bytes());
+                        }
+
+                        buffer.extend(exchange_hash.as_ref());
+                        buffer.push(c);
+                        buffer.extend(session_id.as_ref());
+
+                        let hash = crate::crypto_cng::sha256::sha256(&buffer[..])?;
+                        key.extend(&hash);
+
+                        while key.len() < len {
+                            buffer.clear();
+                            if let Some(shared) = shared_secret {
+                                buffer.extend(shared.as_bytes());
+                            }
+                            buffer.extend(exchange_hash.as_ref());
+                            buffer.extend(key);
+                            let hash = crate::crypto_cng::sha256::sha256(&buffer[..])?;
+                            key.extend(&hash);
+                        }
+
+                        key.resize(len);
+                        Ok(())
+                    };
+
+                    let (local_to_remote, remote_to_local) = if is_server {
+                        (b'D', b'C')
+                    } else {
+                        (b'C', b'D')
+                    };
+
+                    let (local_to_remote_nonce, remote_to_local_nonce) = if is_server {
+                        (b'B', b'A')
+                    } else {
+                        (b'A', b'B')
+                    };
+
+                    let (local_to_remote_mac_key, remote_to_local_mac_key) = if is_server {
+                        (b'F', b'E')
+                    } else {
+                        (b'E', b'F')
+                    };
+
+                    let mut key = key.borrow_mut();
+                    let mut nonce = nonce.borrow_mut();
+                    let mut mac = mac.borrow_mut();
+
+                    compute_key(local_to_remote, &mut key, cipher.key_len())?;
+                    compute_key(local_to_remote_nonce, &mut nonce, cipher.nonce_len())?;
+                    compute_key(
+                        local_to_remote_mac_key,
+                        &mut mac,
+                        local_to_remote_mac.key_len(),
+                    )?;
+
+                    let local_to_remote =
+                        cipher.make_sealing_key(&key, &nonce, &mac, *local_to_remote_mac);
+
+                    compute_key(remote_to_local, &mut key, cipher.key_len())?;
+                    compute_key(remote_to_local_nonce, &mut nonce, cipher.nonce_len())?;
+                    compute_key(
+                        remote_to_local_mac_key,
+                        &mut mac,
+                        remote_to_local_mac.key_len(),
+                    )?;
+
+                    let remote_to_local =
+                        cipher.make_opening_key(&key, &nonce, &mac, *remote_to_local_mac);
+
+                    Ok(super::cipher::CipherPair {
+                        local_to_remote,
+                        remote_to_local,
+                    })
+                })
+            })
+        })
+    })
+}
+
 // NOTE: using MpInt::from_bytes().encode() will randomly fail,
 // I'm assuming it's due to specific byte values / padding but no time to investigate
 #[allow(clippy::indexing_slicing)] // length is known
@@ -477,6 +691,11 @@ pub(crate) fn encode_mpint<W: Writer>(s: &[u8], w: &mut W) -> Result<(), Error> 
     let mut i = 0;
     while i < s.len() && s[i] == 0 {
         i += 1
+    }
+    // All zeros (or empty) → encode as mpint 0 (length = 0).
+    if i == s.len() {
+        0u32.encode(w)?;
+        return Ok(());
     }
     // If the first non-zero is >= 128, write its length (u32, BE), followed by 0.
     if s[i] & 0x80 != 0 {

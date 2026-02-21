@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[cfg(not(feature = "client-minimal"))]
 mod tests {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
@@ -14,6 +15,18 @@ mod tests {
     use crate::server::{self, Auth, Handler as ServerHandler, Server, Session};
     use crate::{ChannelId, SshId}; // Import directly from crate root
     use crate::{CryptoVec, Error};
+
+    #[cfg(feature = "algo-minimal")]
+    fn test_key_algorithm() -> ssh_key::Algorithm {
+        ssh_key::Algorithm::Ecdsa {
+            curve: ssh_key::EcdsaCurve::NistP256,
+        }
+    }
+
+    #[cfg(not(feature = "algo-minimal"))]
+    fn test_key_algorithm() -> ssh_key::Algorithm {
+        ssh_key::Algorithm::Ed25519
+    }
 
     #[derive(Clone)]
     struct TestServer {
@@ -82,7 +95,7 @@ mod tests {
         let _ = env_logger::try_init();
 
         // Create a client key
-        let client_key = PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519).unwrap();
+        let client_key = PrivateKey::random(&mut OsRng, test_key_algorithm()).unwrap();
 
         // Configure the server
         let mut config = server::Config::default();
@@ -91,7 +104,7 @@ mod tests {
         config.inactivity_timeout = None;
         config
             .keys
-            .push(PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519).unwrap());
+            .push(PrivateKey::random(&mut OsRng, test_key_algorithm()).unwrap());
         let config = Arc::new(config);
 
         // Create server struct

@@ -61,7 +61,9 @@ use std::io::Read;
 use std::path::Path;
 use std::string::FromUtf8Error;
 
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use aes::cipher::block_padding::UnpadError;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use aes::cipher::inout::PadError;
 use data_encoding::BASE64_MIME;
 use thiserror::Error;
@@ -71,20 +73,29 @@ use crate::helpers::EncodedExt;
 pub mod key;
 pub use key::PrivateKeyWithHashAlg;
 
+#[cfg(not(feature = "client-minimal"))]
 mod format;
+#[cfg(not(feature = "client-minimal"))]
 pub use format::*;
+
+#[cfg(all(windows, feature = "crypto-cng"))]
+pub mod verify_cng;
+#[cfg(all(windows, feature = "crypto-cng"))]
+pub(crate) mod wire;
 // Reexports
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub use signature;
 pub use ssh_encoding;
 pub use ssh_key::{self, Algorithm, Certificate, EcdsaCurve, HashAlg, PrivateKey, PublicKey};
 
+#[cfg(not(feature = "client-minimal"))]
 /// OpenSSH agent protocol implementation
 pub mod agent;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "ring", feature = "aws-lc-rs")))]
 pub mod known_hosts;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "ring", feature = "aws-lc-rs")))]
 pub use known_hosts::{check_known_hosts, check_known_hosts_path};
 
 #[derive(Debug, Error)]
@@ -99,9 +110,11 @@ pub enum Error {
         key_type_raw: Vec<u8>,
     },
     /// The type of the key is unsupported
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     #[error("Invalid Ed25519 key data")]
     Ed25519KeyError(#[from] ed25519_dalek::SignatureError),
     /// The type of the key is unsupported
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     #[error("Invalid ECDSA key data")]
     EcdsaKeyError(#[from] p256::elliptic_curve::Error),
     /// The key is encrypted (should supply a password?)
@@ -117,6 +130,7 @@ pub enum Error {
     #[error("The server key changed at line {}", line)]
     KeyChanged { line: usize },
     /// The key uses an unsupported algorithm
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     #[error("Unknown key algorithm: {0}")]
     UnknownAlgorithm(::pkcs8::ObjectIdentifier),
     /// Index out of bounds
@@ -141,26 +155,32 @@ pub enum Error {
     #[error("Rsa: {0}")]
     Rsa(#[from] rsa::Error),
 
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     #[error(transparent)]
     Pad(#[from] PadError),
 
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     #[error(transparent)]
     Unpad(#[from] UnpadError),
 
     #[error("Base64 decoding error: {0}")]
     Decode(#[from] data_encoding::DecodeError),
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     #[error("Der: {0}")]
     Der(#[from] der::Error),
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     #[error("Spki: {0}")]
     Spki(#[from] spki::Error),
     #[cfg(feature = "rsa")]
     #[error("Pkcs1: {0}")]
     Pkcs1(#[from] pkcs1::Error),
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     #[error("Pkcs8: {0}")]
     Pkcs8(#[from] ::pkcs8::Error),
     #[cfg(feature = "rsa")]
     #[error("Pkcs8: {0}")]
     Pkcs8Next(#[from] ::rsa::pkcs8::Error),
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     #[error("Sec1: {0}")]
     Sec1(#[from] sec1::Error),
 
@@ -184,7 +204,7 @@ pub enum Error {
     #[cfg(feature = "legacy-ed25519-pkcs8-parser")]
     LegacyASN1(::yasna::ASN1Error),
 
-    #[cfg(windows)]
+    #[cfg(all(windows, feature = "pageant"))]
     #[error("Pageant: {0}")]
     Pageant(#[from] pageant::Error),
 }
@@ -249,6 +269,7 @@ impl PublicKeyBase64 for PrivateKey {
     }
 }
 
+#[cfg(not(feature = "client-minimal"))]
 /// Load a secret key, deciphering it with the supplied password if necessary.
 pub fn load_secret_key<P: AsRef<Path>>(
     secret_: P,
@@ -260,6 +281,7 @@ pub fn load_secret_key<P: AsRef<Path>>(
     decode_secret_key(&secret, password)
 }
 
+#[cfg(not(feature = "client-minimal"))]
 /// Load a openssh certificate
 pub fn load_openssh_certificate<P: AsRef<Path>>(cert_: P) -> Result<Certificate, ssh_key::Error> {
     let mut cert_file = std::fs::File::open(cert_)?;
@@ -269,6 +291,7 @@ pub fn load_openssh_certificate<P: AsRef<Path>>(cert_: P) -> Result<Certificate,
     Certificate::from_openssh(&cert)
 }
 
+#[cfg(not(feature = "client-minimal"))]
 fn is_base64_char(c: char) -> bool {
     c.is_ascii_lowercase()
         || c.is_ascii_uppercase()
@@ -279,6 +302,7 @@ fn is_base64_char(c: char) -> bool {
 }
 
 #[cfg(test)]
+#[cfg(not(feature = "client-minimal"))]
 mod test {
 
     #[cfg(unix)]

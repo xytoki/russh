@@ -4,6 +4,20 @@ use futures::Future;
 
 use super::*;
 
+/// Return the key algorithm used for test server/client key generation.
+/// Under `algo-minimal` we only support ECDSA-P256 and RSA, so use P-256.
+#[cfg(feature = "algo-minimal")]
+fn test_key_algorithm() -> ssh_key::Algorithm {
+    ssh_key::Algorithm::Ecdsa {
+        curve: ssh_key::EcdsaCurve::NistP256,
+    }
+}
+
+#[cfg(not(feature = "algo-minimal"))]
+fn test_key_algorithm() -> ssh_key::Algorithm {
+    ssh_key::Algorithm::Ed25519
+}
+
 mod compress {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
@@ -21,14 +35,14 @@ mod compress {
     async fn compress_local_test() {
         let _ = env_logger::try_init();
 
-        let client_key = PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519).unwrap();
+        let client_key = PrivateKey::random(&mut OsRng, super::test_key_algorithm()).unwrap();
         let mut config = server::Config::default();
         config.preferred = Preferred::COMPRESSED;
         config.inactivity_timeout = None; // Some(std::time::Duration::from_secs(3));
         config.auth_rejection_time = std::time::Duration::from_secs(3);
         config
             .keys
-            .push(PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519).unwrap());
+            .push(PrivateKey::random(&mut OsRng, super::test_key_algorithm()).unwrap());
         let config = Arc::new(config);
         let mut sh = Server {
             clients: Arc::new(Mutex::new(HashMap::new())),
@@ -167,13 +181,13 @@ mod channels {
 
         let _ = env_logger::try_init();
 
-        let client_key = PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519).unwrap();
+        let client_key = PrivateKey::random(&mut OsRng, super::test_key_algorithm()).unwrap();
         let mut config = server::Config::default();
         config.inactivity_timeout = None;
         config.auth_rejection_time = std::time::Duration::from_secs(3);
         config
             .keys
-            .push(PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519).unwrap());
+            .push(PrivateKey::random(&mut OsRng, super::test_key_algorithm()).unwrap());
         let config = Arc::new(config);
         let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = socket.local_addr().unwrap();

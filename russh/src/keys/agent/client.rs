@@ -82,7 +82,7 @@ impl AgentClient<tokio::net::UnixStream> {
 #[cfg(windows)]
 const ERROR_PIPE_BUSY: u32 = 231u32;
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "pageant"))]
 impl AgentClient<pageant::PageantStream> {
     /// Connect to a running Pageant instance
     pub async fn connect_pageant() -> Result<Self, Error> {

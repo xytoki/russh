@@ -13,7 +13,9 @@
 // limitations under the License.
 //
 use std::cell::RefCell;
+#[cfg(not(feature = "client-minimal"))]
 use std::convert::TryInto;
+#[cfg(all(not(feature = "client-minimal"), any(feature = "ring", feature = "aws-lc-rs")))]
 use std::ops::Deref;
 use std::str::FromStr;
 
@@ -24,9 +26,18 @@ use ssh_key::Algorithm;
 
 use super::IncomingSshPacket;
 use crate::auth::AuthRequest;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use crate::cert::PublicKeyOrCertificate;
-use crate::client::{Handler, Msg, Prompt, Reply, Session};
-use crate::helpers::{sign_with_hash_alg, AlgorithmExt, EncodedExt, NameList};
+use crate::client::{Handler, Msg, Reply, Session};
+#[cfg(not(feature = "client-minimal"))]
+use crate::client::Prompt;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use crate::helpers::sign_with_hash_alg;
+#[cfg(not(feature = "client-minimal"))]
+use crate::helpers::AlgorithmExt;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use crate::helpers::EncodedExt;
+use crate::helpers::NameList;
 use crate::keys::key::parse_public_key;
 use crate::parsing::{ChannelOpenConfirmation, ChannelType, OpenChannelMessage};
 use crate::session::{Encrypted, EncryptedState, GlobalRequestResponse};
@@ -141,6 +152,10 @@ impl Session {
                             }
                         }
                         Some((&msg::USERAUTH_INFO_REQUEST_OR_USERAUTH_PK_OK, mut r)) => {
+                            #[cfg(feature = "client-minimal")]
+                            let _ = &mut r;
+
+                            #[cfg(not(feature = "client-minimal"))]
                             if let Some(auth::CurrentRequest::PublicKey {
                                 ref mut sent_pk_ok,
                                 ..
@@ -201,6 +216,7 @@ impl Session {
 
                             // continue with userauth_pk_ok
                             match self.common.auth_method.take() {
+                                #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
                                 Some(auth_method @ auth::Method::PublicKey { .. }) => {
                                     self.common.buffer.clear();
                                     enc.client_send_signature(
@@ -209,6 +225,7 @@ impl Session {
                                         &mut self.common.buffer,
                                     )?
                                 }
+                                #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
                                 Some(auth_method @ auth::Method::OpenSshCertificate { .. }) => {
                                     self.common.buffer.clear();
                                     enc.client_send_signature(
@@ -217,6 +234,7 @@ impl Session {
                                         &mut self.common.buffer,
                                     )?
                                 }
+                                #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
                                 Some(auth::Method::FuturePublicKey { key, hash_alg }) => {
                                     debug!("public key");
                                     self.common.buffer.clear();
@@ -904,6 +922,7 @@ impl Encrypted {
                     password.encode(&mut self.write)?;
                     true
                 }
+                #[cfg(not(feature = "client-minimal"))]
                 auth::Method::PublicKey { ref key } => {
                     user.encode(&mut self.write)?;
                     "ssh-connection".encode(&mut self.write)?;
@@ -915,6 +934,7 @@ impl Encrypted {
                     key.public_key().to_bytes()?.encode(&mut self.write)?;
                     true
                 }
+                #[cfg(not(feature = "client-minimal"))]
                 auth::Method::OpenSshCertificate { ref cert, .. } => {
                     user.as_bytes().encode(&mut self.write)?;
                     "ssh-connection".encode(&mut self.write)?;
@@ -928,6 +948,7 @@ impl Encrypted {
                     cert.to_bytes()?.as_slice().encode(&mut self.write)?;
                     true
                 }
+                #[cfg(not(feature = "client-minimal"))]
                 auth::Method::FuturePublicKey { ref key, hash_alg } => {
                     user.as_bytes().encode(&mut self.write)?;
                     "ssh-connection".encode(&mut self.write)?;
@@ -955,6 +976,7 @@ impl Encrypted {
         }))
     }
 
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     fn client_make_to_sign(
         &mut self,
         user: &str,
@@ -984,6 +1006,7 @@ impl Encrypted {
         Ok(i0)
     }
 
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     fn client_send_signature(
         &mut self,
         user: &str,
@@ -1025,6 +1048,7 @@ impl Encrypted {
         Ok(())
     }
 
+    #[cfg(not(feature = "client-minimal"))]
     fn client_send_auth_response(&mut self, responses: &[String]) -> Result<(), crate::Error> {
         push_packet!(self.write, {
             msg::USERAUTH_INFO_RESPONSE.encode(&mut self.write)?;

@@ -15,23 +15,29 @@
 use std::borrow::Cow;
 
 use log::debug;
-use rand::RngCore;
 use ssh_encoding::{Decode, Encode};
 use ssh_key::{Algorithm, EcdsaCurve, HashAlg, PrivateKey};
 
 use crate::cipher::CIPHERS;
 use crate::helpers::NameList;
 use crate::kex::{
-    EXTENSION_OPENSSH_STRICT_KEX_AS_CLIENT, EXTENSION_OPENSSH_STRICT_KEX_AS_SERVER, KexCause,
+    KexCause, EXTENSION_OPENSSH_STRICT_KEX_AS_CLIENT, EXTENSION_OPENSSH_STRICT_KEX_AS_SERVER,
 };
-use crate::keys::key::safe_rng;
-#[cfg(not(target_arch = "wasm32"))]
+use crate::keys::key::fill_random;
+#[cfg(all(
+    not(any(target_arch = "wasm32", feature = "client-minimal")),
+    any(feature = "ring", feature = "aws-lc-rs")
+))]
 use crate::server::Config;
 use crate::sshbuffer::PacketWriter;
-use crate::{AlgorithmKind, CryptoVec, Error, cipher, compression, kex, mac, msg};
+use crate::{cipher, compression, kex, mac, msg, AlgorithmKind, CryptoVec, Error};
 
-#[cfg(target_arch = "wasm32")]
-/// WASM-only stub
+#[cfg(any(
+    target_arch = "wasm32",
+    feature = "client-minimal",
+    not(any(feature = "ring", feature = "aws-lc-rs"))
+))]
+/// Stub for minimal/WASM builds (no server module)
 pub struct Config {
     keys: Vec<PrivateKey>,
 }
@@ -100,7 +106,9 @@ impl Preferred {
     }
 }
 
+#[cfg(not(feature = "algo-minimal"))]
 const SAFE_KEX_ORDER: &[kex::Name] = &[
+    #[cfg(feature = "pqc-mlkem")]
     kex::MLKEM768X25519_SHA256,
     kex::CURVE25519,
     kex::CURVE25519_PRE_RFC_8731,
@@ -116,6 +124,15 @@ const SAFE_KEX_ORDER: &[kex::Name] = &[
     kex::EXTENSION_OPENSSH_STRICT_KEX_AS_SERVER,
 ];
 
+#[cfg(feature = "algo-minimal")]
+const SAFE_KEX_ORDER: &[kex::Name] = &[
+    kex::ECDH_SHA2_NISTP256,
+    kex::EXTENSION_SUPPORT_AS_CLIENT,
+    kex::EXTENSION_SUPPORT_AS_SERVER,
+    kex::EXTENSION_OPENSSH_STRICT_KEX_AS_CLIENT,
+    kex::EXTENSION_OPENSSH_STRICT_KEX_AS_SERVER,
+];
+
 const KEX_EXTENSION_NAMES: &[kex::Name] = &[
     kex::EXTENSION_SUPPORT_AS_CLIENT,
     kex::EXTENSION_SUPPORT_AS_SERVER,
@@ -123,6 +140,7 @@ const KEX_EXTENSION_NAMES: &[kex::Name] = &[
     kex::EXTENSION_OPENSSH_STRICT_KEX_AS_SERVER,
 ];
 
+#[cfg(not(feature = "algo-minimal"))]
 const CIPHER_ORDER: &[cipher::Name] = &[
     cipher::CHACHA20_POLY1305,
     cipher::AES_256_GCM,
@@ -131,6 +149,10 @@ const CIPHER_ORDER: &[cipher::Name] = &[
     cipher::AES_128_CTR,
 ];
 
+#[cfg(feature = "algo-minimal")]
+const CIPHER_ORDER: &[cipher::Name] = &[cipher::AES_128_GCM, cipher::AES_256_GCM];
+
+#[cfg(not(feature = "algo-minimal"))]
 const HMAC_ORDER: &[mac::Name] = &[
     mac::HMAC_SHA512_ETM,
     mac::HMAC_SHA256_ETM,
@@ -139,6 +161,9 @@ const HMAC_ORDER: &[mac::Name] = &[
     mac::HMAC_SHA1_ETM,
     mac::HMAC_SHA1,
 ];
+
+#[cfg(feature = "algo-minimal")]
+const HMAC_ORDER: &[mac::Name] = &[mac::NONE];
 
 const COMPRESSION_ORDER: &[compression::Name] = &[
     compression::NONE,
@@ -149,6 +174,7 @@ const COMPRESSION_ORDER: &[compression::Name] = &[
 ];
 
 impl Preferred {
+    #[cfg(not(feature = "algo-minimal"))]
     pub const DEFAULT: Preferred = Preferred {
         kex: Cow::Borrowed(SAFE_KEX_ORDER),
         key: Cow::Borrowed(&[
@@ -169,6 +195,22 @@ impl Preferred {
                 hash: Some(HashAlg::Sha256),
             },
             Algorithm::Rsa { hash: None },
+        ]),
+        cipher: Cow::Borrowed(CIPHER_ORDER),
+        mac: Cow::Borrowed(HMAC_ORDER),
+        compression: Cow::Borrowed(COMPRESSION_ORDER),
+    };
+
+    #[cfg(feature = "algo-minimal")]
+    pub const DEFAULT: Preferred = Preferred {
+        kex: Cow::Borrowed(SAFE_KEX_ORDER),
+        key: Cow::Borrowed(&[
+            Algorithm::Ecdsa {
+                curve: EcdsaCurve::NistP256,
+            },
+            Algorithm::Rsa {
+                hash: Some(HashAlg::Sha256),
+            },
         ]),
         cipher: Cow::Borrowed(CIPHER_ORDER),
         mac: Cow::Borrowed(HMAC_ORDER),
@@ -425,7 +467,7 @@ pub(crate) fn write_kex(
         msg::KEXINIT.encode(w)?;
 
         let mut cookie = [0; 16];
-        safe_rng().fill_bytes(&mut cookie);
+        fill_random(&mut cookie);
         for b in cookie {
             b.encode(w)?;
         }

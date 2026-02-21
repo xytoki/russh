@@ -4,16 +4,28 @@ use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use bytes::Bytes;
-use log::{debug, error, warn};
+#[cfg(not(feature = "algo-minimal"))]
+use log::warn;
+use log::{debug, error};
+#[cfg(not(all(windows, feature = "crypto-cng")))]
 use signature::Verifier;
 use ssh_encoding::{Decode, Encode};
-use ssh_key::{Mpint, PublicKey, Signature};
+#[cfg(not(feature = "algo-minimal"))]
+use ssh_key::Mpint;
+use ssh_key::PublicKey;
+#[cfg(not(all(windows, feature = "crypto-cng")))]
+use ssh_key::Signature;
 
 use super::IncomingSshPacket;
 use crate::client::{Config, NewKeys};
+#[cfg(all(windows, feature = "crypto-cng"))]
+use crate::helpers::EncodedExt;
+#[cfg(not(feature = "algo-minimal"))]
 use crate::kex::dh::groups::DhGroup;
 use crate::kex::{KexAlgorithm, KexAlgorithmImplementor, KexCause, KexProgress, KEXES};
 use crate::keys::key::parse_public_key;
+#[cfg(all(windows, feature = "crypto-cng"))]
+use crate::keys::wire::{parse_key_algo, parse_signature};
 use crate::negotiation::{Names, Select};
 use crate::session::Exchange;
 use crate::sshbuffer::PacketWriter;
@@ -27,6 +39,7 @@ thread_local! {
 #[allow(clippy::large_enum_variant)]
 enum ClientKexState {
     Created,
+    #[cfg(not(feature = "algo-minimal"))]
     WaitingForGexReply {
         names: Names,
         kex: KexAlgorithm,
@@ -57,6 +70,7 @@ impl Debug for ClientKex {
             ClientKexState::Created => {
                 s.field("state", &"created");
             }
+            #[cfg(not(feature = "algo-minimal"))]
             ClientKexState::WaitingForGexReply { .. } => {
                 s.field("state", &"waiting for GEX response");
             }
@@ -158,12 +172,19 @@ impl ClientKex {
                 }
 
                 if kex.is_dh_gex() {
-                    output.packet(|w| {
-                        kex.client_dh_gex_init(&self.config.gex, w)?;
-                        Ok(())
-                    })?;
+                    #[cfg(not(feature = "algo-minimal"))]
+                    {
+                        output.packet(|w| {
+                            kex.client_dh_gex_init(&self.config.gex, w)?;
+                            Ok(())
+                        })?;
 
-                    self.state = ClientKexState::WaitingForGexReply { names, kex };
+                        self.state = ClientKexState::WaitingForGexReply { names, kex };
+                    }
+                    #[cfg(feature = "algo-minimal")]
+                    {
+                        return Err(Error::KexInit);
+                    }
                 } else {
                     output.packet(|w| {
                         kex.client_dh(&mut self.exchange.client_ephemeral, w)?;
@@ -178,6 +199,7 @@ impl ClientKex {
                     reset_seqn: false,
                 })
             }
+            #[cfg(not(feature = "algo-minimal"))]
             ClientKexState::WaitingForGexReply { names, mut kex } => {
                 let Some(input) = input else {
                     return Err(Error::KexInit);
@@ -286,11 +308,56 @@ impl ClientKex {
                 })?;
 
                 let signature = Bytes::decode(r)?;
-                let signature = Signature::decode(&mut &signature[..])?;
 
-                if let Err(e) = Verifier::verify(&server_host_key, hash.as_ref(), &signature) {
-                    debug!("wrong server sig: {e:?}");
-                    return Err(Error::WrongServerSig);
+                #[cfg(all(windows, feature = "crypto-cng"))]
+                {
+                    let key_blob = server_host_key
+                        .key_data()
+                        .encoded()
+                        .map_err(|_| Error::WrongServerSig)?;
+                    let key_algo = parse_key_algo(&key_blob)?;
+                    let (sig_algo, sig_bytes) = parse_signature(&signature)?;
+                    let hash_ref = hash.as_ref();
+                    let verified = match key_algo {
+                        "ssh-rsa" => {
+                            // CNG only implements SHA-256 for RSA verification.
+                            // Reject if signature uses a different hash (e.g. rsa-sha2-512).
+                            if sig_algo != "ssh-rsa" && sig_algo != "rsa-sha2-256" {
+                                debug!("CNG RSA verify only supports SHA-256, got {sig_algo}");
+                                return Err(Error::WrongServerSig);
+                            }
+                            crate::keys::verify_cng::verify_rsa_sha256(
+                                &key_blob, hash_ref, sig_bytes,
+                            )
+                        }
+                        "ecdsa-sha2-nistp256" => crate::keys::verify_cng::verify_ecdsa_p256(
+                            &key_blob, hash_ref, sig_bytes,
+                        ),
+                        _ => {
+                            debug!("unsupported host key algorithm for CNG: {key_algo}");
+                            Err(crate::keys::Error::InvalidSignature)
+                        }
+                    };
+                    match verified {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            debug!("CNG signature verification returned false");
+                            return Err(Error::WrongServerSig);
+                        }
+                        Err(e) => {
+                            debug!("CNG signature verification error: {e:?}");
+                            return Err(Error::WrongServerSig);
+                        }
+                    }
+                }
+
+                #[cfg(not(all(windows, feature = "crypto-cng")))]
+                {
+                    let signature = Signature::decode(&mut &signature[..])?;
+                    if let Err(e) = Verifier::verify(&server_host_key, hash.as_ref(), &signature) {
+                        debug!("wrong server sig: {e:?}");
+                        return Err(Error::WrongServerSig);
+                    }
                 }
 
                 let newkeys = compute_keys(

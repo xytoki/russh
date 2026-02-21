@@ -8,10 +8,10 @@ use subtle::ConstantTimeEq;
 
 use super::{Mac, MacAlgorithm};
 
-pub struct CryptoMacAlgorithm<
-    M: digest::Mac + KeyInit + Send + 'static,
-    KL: ArrayLength + 'static,
->(pub PhantomData<M>, pub PhantomData<KL>);
+pub struct CryptoMacAlgorithm<M: digest::Mac + KeyInit + Send + 'static, KL: ArrayLength + 'static>(
+    pub PhantomData<M>,
+    pub PhantomData<KL>,
+);
 
 pub struct CryptoMac<M: digest::Mac + KeyInit + Send + 'static, KL: ArrayLength + 'static> {
     pub(crate) key: GenericArray<u8, KL>,

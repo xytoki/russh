@@ -1,3 +1,4 @@
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use std::io::Write;
 
 use data_encoding::{BASE64_MIME, HEXLOWER_PERMISSIVE};
@@ -16,9 +17,12 @@ mod tests;
 
 pub use self::openssh::*;
 
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod pkcs5;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub use self::pkcs5::*;
 
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod pkcs8;
 
 const AES_128_CBC: &str = "DEK-Info: AES-128-CBC,";
@@ -46,7 +50,13 @@ enum Format {
 /// password.
 pub fn decode_secret_key(secret: &str, password: Option<&str>) -> Result<PrivateKey, Error> {
     if secret.trim().starts_with("PuTTY-User-Key-File-") {
+        #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
         return Ok(PrivateKey::from_ppk(secret, password.map(Into::into))?);
+        #[cfg(not(any(feature = "ring", feature = "aws-lc-rs")))]
+        return Err(Error::UnsupportedKeyType {
+            key_type_string: "PPK".to_string(),
+            key_type_raw: vec![],
+        });
     }
     let mut format = None;
     let secret = {
@@ -102,7 +112,9 @@ pub fn decode_secret_key(secret: &str, password: Option<&str>) -> Result<Private
         Some(Format::Openssh) => decode_openssh(&secret, password),
         #[cfg(feature = "rsa")]
         Some(Format::Rsa) => Ok(decode_rsa_pkcs1_der(&secret)?.into()),
+        #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
         Some(Format::Pkcs5Encrypted(enc)) => decode_pkcs5(&secret, password, enc),
+        #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
         Some(Format::Pkcs8Encrypted) | Some(Format::Pkcs8) => {
             let result = self::pkcs8::decode_pkcs8(&secret, password.map(|x| x.as_bytes()));
             #[cfg(feature = "legacy-ed25519-pkcs8-parser")]
@@ -117,10 +129,18 @@ pub fn decode_secret_key(secret: &str, password: Option<&str>) -> Result<Private
             }
             result
         }
+        #[cfg(not(any(feature = "ring", feature = "aws-lc-rs")))]
+        Some(Format::Pkcs5Encrypted(_)) | Some(Format::Pkcs8Encrypted) | Some(Format::Pkcs8) => {
+            Err(Error::UnsupportedKeyType {
+                key_type_string: "PKCS".to_string(),
+                key_type_raw: vec![],
+            })
+        }
         None => Err(Error::CouldNotReadKey),
     }
 }
 
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub fn encode_pkcs8_pem<W: Write>(key: &PrivateKey, mut w: W) -> Result<(), Error> {
     let x = self::pkcs8::encode_pkcs8(key)?;
     w.write_all(b"-----BEGIN PRIVATE KEY-----\n")?;
@@ -129,6 +149,7 @@ pub fn encode_pkcs8_pem<W: Write>(key: &PrivateKey, mut w: W) -> Result<(), Erro
     Ok(())
 }
 
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub fn encode_pkcs8_pem_encrypted<W: Write>(
     key: &PrivateKey,
     pass: &[u8],

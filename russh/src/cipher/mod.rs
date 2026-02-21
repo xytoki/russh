@@ -18,36 +18,49 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::Debug;
+#[cfg(not(feature = "algo-minimal"))]
 use std::marker::PhantomData;
 use std::num::Wrapping;
 use std::sync::LazyLock;
 
+#[cfg(not(feature = "algo-minimal"))]
 use aes::{Aes128, Aes192, Aes256};
-#[cfg(feature = "aws-lc-rs")]
+#[cfg(all(feature = "aws-lc-rs", not(all(windows, feature = "crypto-cng"))))]
 use aws_lc_rs::aead::{AES_128_GCM as ALGORITHM_AES_128_GCM, AES_256_GCM as ALGORITHM_AES_256_GCM};
 use byteorder::{BigEndian, ByteOrder};
+#[cfg(not(feature = "algo-minimal"))]
 use ctr::Ctr128BE;
 use delegate::delegate;
 use log::trace;
-#[cfg(all(not(feature = "aws-lc-rs"), feature = "ring"))]
+#[cfg(all(not(feature = "aws-lc-rs"), feature = "ring", not(all(windows, feature = "crypto-cng"))))]
 use ring::aead::{AES_128_GCM as ALGORITHM_AES_128_GCM, AES_256_GCM as ALGORITHM_AES_256_GCM};
 use ssh_encoding::Encode;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
+#[cfg(not(feature = "algo-minimal"))]
 use self::cbc::CbcWrapper;
 use crate::Error;
 use crate::mac::MacAlgorithm;
 use crate::sshbuffer::SSHBuffer;
 
+#[cfg(not(feature = "algo-minimal"))]
 pub(crate) mod block;
+#[cfg(not(feature = "algo-minimal"))]
 pub(crate) mod cbc;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub(crate) mod chacha20poly1305;
 pub(crate) mod clear;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub(crate) mod gcm;
+#[cfg(all(windows, feature = "crypto-cng"))]
+pub(crate) mod gcm_cng;
 
+#[cfg(not(feature = "algo-minimal"))]
 use block::SshBlockCipher;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use chacha20poly1305::SshChacha20Poly1305Cipher;
 use clear::Clear;
+#[cfg(all(any(feature = "ring", feature = "aws-lc-rs"), not(all(windows, feature = "crypto-cng"))))]
 use gcm::GcmCipher;
 
 pub(crate) trait Cipher {
@@ -101,18 +114,28 @@ pub const CHACHA20_POLY1305: Name = Name("chacha20-poly1305@openssh.com");
 pub const NONE: Name = Name("none");
 
 pub(crate) static _CLEAR: Clear = Clear {};
-#[cfg(feature = "des")]
+#[cfg(all(feature = "des", not(feature = "algo-minimal")))]
 static _3DES_CBC: SshBlockCipher<CbcWrapper<des::TdesEde3>> = SshBlockCipher(PhantomData);
+#[cfg(not(feature = "algo-minimal"))]
 static _AES_128_CTR: SshBlockCipher<Ctr128BE<Aes128>> = SshBlockCipher(PhantomData);
+#[cfg(not(feature = "algo-minimal"))]
 static _AES_192_CTR: SshBlockCipher<Ctr128BE<Aes192>> = SshBlockCipher(PhantomData);
+#[cfg(not(feature = "algo-minimal"))]
 static _AES_256_CTR: SshBlockCipher<Ctr128BE<Aes256>> = SshBlockCipher(PhantomData);
+#[cfg(all(any(feature = "ring", feature = "aws-lc-rs"), not(all(windows, feature = "crypto-cng"))))]
 static _AES_128_GCM: GcmCipher = GcmCipher(&ALGORITHM_AES_128_GCM);
+#[cfg(all(any(feature = "ring", feature = "aws-lc-rs"), not(all(windows, feature = "crypto-cng"))))]
 static _AES_256_GCM: GcmCipher = GcmCipher(&ALGORITHM_AES_256_GCM);
+#[cfg(not(feature = "algo-minimal"))]
 static _AES_128_CBC: SshBlockCipher<CbcWrapper<Aes128>> = SshBlockCipher(PhantomData);
+#[cfg(not(feature = "algo-minimal"))]
 static _AES_192_CBC: SshBlockCipher<CbcWrapper<Aes192>> = SshBlockCipher(PhantomData);
+#[cfg(not(feature = "algo-minimal"))]
 static _AES_256_CBC: SshBlockCipher<CbcWrapper<Aes256>> = SshBlockCipher(PhantomData);
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 static _CHACHA20_POLY1305: SshChacha20Poly1305Cipher = SshChacha20Poly1305Cipher {};
 
+#[cfg(not(feature = "algo-minimal"))]
 pub static ALL_CIPHERS: &[&Name] = &[
     &CLEAR,
     &NONE,
@@ -126,25 +149,44 @@ pub static ALL_CIPHERS: &[&Name] = &[
     &AES_128_CBC,
     &AES_192_CBC,
     &AES_256_CBC,
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     &CHACHA20_POLY1305,
+];
+
+#[cfg(feature = "algo-minimal")]
+pub static ALL_CIPHERS: &[&Name] = &[
+    &AES_128_GCM,
+    &AES_256_GCM,
 ];
 
 pub(crate) static CIPHERS: LazyLock<HashMap<&'static Name, &(dyn Cipher + Send + Sync)>> =
     LazyLock::new(|| {
         let mut h: HashMap<&'static Name, &(dyn Cipher + Send + Sync)> = HashMap::new();
-        h.insert(&CLEAR, &_CLEAR);
-        h.insert(&NONE, &_CLEAR);
-        #[cfg(feature = "des")]
-        h.insert(&TRIPLE_DES_CBC, &_3DES_CBC);
-        h.insert(&AES_128_CTR, &_AES_128_CTR);
-        h.insert(&AES_192_CTR, &_AES_192_CTR);
-        h.insert(&AES_256_CTR, &_AES_256_CTR);
-        h.insert(&AES_128_GCM, &_AES_128_GCM);
-        h.insert(&AES_256_GCM, &_AES_256_GCM);
-        h.insert(&AES_128_CBC, &_AES_128_CBC);
-        h.insert(&AES_192_CBC, &_AES_192_CBC);
-        h.insert(&AES_256_CBC, &_AES_256_CBC);
-        h.insert(&CHACHA20_POLY1305, &_CHACHA20_POLY1305);
+        #[cfg(not(feature = "algo-minimal"))]
+        {
+            h.insert(&CLEAR, &_CLEAR);
+            h.insert(&NONE, &_CLEAR);
+            #[cfg(feature = "des")]
+            h.insert(&TRIPLE_DES_CBC, &_3DES_CBC);
+            h.insert(&AES_128_CTR, &_AES_128_CTR);
+            h.insert(&AES_192_CTR, &_AES_192_CTR);
+            h.insert(&AES_256_CTR, &_AES_256_CTR);
+            h.insert(&AES_128_CBC, &_AES_128_CBC);
+            h.insert(&AES_192_CBC, &_AES_192_CBC);
+            h.insert(&AES_256_CBC, &_AES_256_CBC);
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            h.insert(&CHACHA20_POLY1305, &_CHACHA20_POLY1305);
+        }
+        #[cfg(all(any(feature = "ring", feature = "aws-lc-rs"), not(all(windows, feature = "crypto-cng"))))]
+        {
+            h.insert(&AES_128_GCM, &_AES_128_GCM);
+            h.insert(&AES_256_GCM, &_AES_256_GCM);
+        }
+        #[cfg(all(windows, feature = "crypto-cng"))]
+        {
+            h.insert(&AES_128_GCM, &gcm_cng::CNG_AES_128_GCM);
+            h.insert(&AES_256_GCM, &gcm_cng::CNG_AES_256_GCM);
+        }
         assert_eq!(h.len(), ALL_CIPHERS.len());
         h
     });

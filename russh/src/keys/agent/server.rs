@@ -14,7 +14,9 @@ use tokio::time::sleep;
 use {std, tokio};
 
 use super::{msg, Constraint};
-use crate::helpers::{sign_with_hash_alg, EncodedExt};
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use crate::helpers::sign_with_hash_alg;
+use crate::helpers::EncodedExt;
 use crate::keys::key::PrivateKeyWithHashAlg;
 use crate::keys::Error;
 use crate::CryptoVec;

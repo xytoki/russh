@@ -8,7 +8,13 @@ pub fn decode_openssh(secret: &[u8], password: Option<&str>) -> Result<PrivateKe
     let pk = PrivateKey::from_bytes(secret)?;
     if pk.is_encrypted() {
         if let Some(password) = password {
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             return Ok(pk.decrypt(password)?);
+            #[cfg(not(any(feature = "ring", feature = "aws-lc-rs")))]
+            {
+                let _ = password;
+                return Err(Error::KeyIsEncrypted);
+            }
         } else {
             return Err(Error::KeyIsEncrypted);
         }

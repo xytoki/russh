@@ -1,0 +1,23 @@
+Port 2200
+ListenAddress 0.0.0.0
+
+# Only host keys that algo-minimal supports
+HostKey /etc/ssh/ssh_host_ecdsa_key
+HostKey /etc/ssh/ssh_host_rsa_key
+
+# Restrict to algo-minimal algorithm set
+KexAlgorithms ecdh-sha2-nistp256
+Ciphers aes128-gcm@openssh.com,aes256-gcm@openssh.com
+HostKeyAlgorithms ecdsa-sha2-nistp256,rsa-sha2-256
+PubkeyAcceptedAlgorithms ecdsa-sha2-nistp256,rsa-sha2-256
+MACs hmac-sha2-256
+
+# Auth
+PasswordAuthentication yes
+PermitEmptyPasswords no
+PubkeyAuthentication no
+
+# Misc
+PermitRootLogin no
+Subsystem sftp /usr/lib/ssh/sftp-server
+LogLevel DEBUG

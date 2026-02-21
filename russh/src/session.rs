@@ -29,7 +29,7 @@ use crate::kex::dh::groups::DhGroup;
 use crate::kex::{KexAlgorithm, KexAlgorithmImplementor};
 use crate::sshbuffer::PacketWriter;
 use crate::{
-    ChannelId, ChannelParams, CryptoVec, Disconnect, Limits, auth, cipher, mac, msg, negotiation,
+    auth, cipher, mac, msg, negotiation, ChannelId, ChannelParams, CryptoVec, Disconnect, Limits,
 };
 
 #[derive(Debug)]
@@ -196,6 +196,7 @@ impl<C> CommonSession<C> {
     }
 
     /// Send a debug message.
+    #[cfg(not(feature = "client-minimal"))]
     pub fn debug(
         &mut self,
         always_display: bool,
@@ -270,7 +271,8 @@ impl Encrypted {
         if let Some(channel) = self.channels.get_mut(&channel) {
             trace!(
                 "adjust_window_size, channel = {}, size = {},",
-                channel.sender_channel, target
+                channel.sender_channel,
+                target
             );
             // Ignore extra data.
             // https://tools.ietf.org/html/rfc4254#section-5.2
@@ -554,6 +556,7 @@ pub struct Exchange {
     pub server_kex_init: CryptoVec,
     pub client_ephemeral: CryptoVec,
     pub server_ephemeral: CryptoVec,
+    #[cfg_attr(feature = "algo-minimal", allow(dead_code))]
     pub gex: Option<(GexParams, DhGroup)>,
 }
 

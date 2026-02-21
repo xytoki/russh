@@ -49,7 +49,9 @@ use tokio::pin;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::cipher::{clear, OpeningKey};
-use crate::kex::dh::groups::{DhGroup, BUILTIN_SAFE_DH_GROUPS, DH_GROUP14};
+use crate::kex::dh::groups::DhGroup;
+#[cfg(not(feature = "algo-minimal"))]
+use crate::kex::dh::groups::{BUILTIN_SAFE_DH_GROUPS, DH_GROUP14};
 use crate::kex::{KexProgress, SessionKexState};
 use crate::session::*;
 use crate::ssh_read::*;
@@ -769,6 +771,14 @@ pub trait Handler: Sized {
         gex_params: &GexParams,
     ) -> impl Future<Output = Result<Option<DhGroup>, Self::Error>> + Send {
         async {
+            #[cfg(feature = "algo-minimal")]
+            {
+                let _ = gex_params;
+                return Ok(None);
+            }
+
+            #[cfg(not(feature = "algo-minimal"))]
+            {
             let mut best_group = &DH_GROUP14;
 
             // Find _some_ matching group
@@ -790,6 +800,7 @@ pub trait Handler: Sized {
             }
 
             Ok(Some(best_group.clone()))
+            }
         }
     }
 }

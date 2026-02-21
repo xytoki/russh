@@ -61,14 +61,29 @@ impl KexAlgorithmImplementor for NoneKexAlgorithm {
         local_to_remote_mac: crate::mac::Name,
         is_server: bool,
     ) -> Result<crate::cipher::CipherPair, crate::Error> {
-        super::compute_keys::<sha2::Sha256>(
-            None,
-            session_id,
-            exchange_hash,
-            cipher,
-            remote_to_local_mac,
-            local_to_remote_mac,
-            is_server,
-        )
+        #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+        {
+            super::compute_keys::<sha2::Sha256>(
+                None,
+                session_id,
+                exchange_hash,
+                cipher,
+                remote_to_local_mac,
+                local_to_remote_mac,
+                is_server,
+            )
+        }
+        #[cfg(not(any(feature = "ring", feature = "aws-lc-rs")))]
+        {
+            super::compute_keys_sha256_cng(
+                None,
+                session_id,
+                exchange_hash,
+                cipher,
+                remote_to_local_mac,
+                local_to_remote_mac,
+                is_server,
+            )
+        }
     }
 }

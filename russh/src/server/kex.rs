@@ -1,14 +1,18 @@
 use core::fmt;
 use std::cell::RefCell;
 
+#[cfg(not(feature = "algo-minimal"))]
 use client::GexParams;
 use log::debug;
+#[cfg(not(feature = "algo-minimal"))]
 use num_bigint::BigUint;
 use ssh_encoding::Encode;
 use ssh_key::Algorithm;
 
 use super::*;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use crate::helpers::sign_with_hash_alg;
+#[cfg(not(feature = "algo-minimal"))]
 use crate::kex::dh::biguint_to_mpint;
 use crate::kex::{KexAlgorithm, KexAlgorithmImplementor, KexCause, KEXES};
 use crate::keys::key::PrivateKeyWithHashAlg;
@@ -23,6 +27,7 @@ thread_local! {
 #[allow(clippy::large_enum_variant)]
 enum ServerKexState {
     Created,
+    #[cfg(not(feature = "algo-minimal"))]
     WaitingForGexRequest {
         names: Names,
         kex: KexAlgorithm,
@@ -52,6 +57,7 @@ impl Debug for ServerKex {
             ServerKexState::Created => {
                 s.field("state", &"created");
             }
+            #[cfg(not(feature = "algo-minimal"))]
             ServerKexState::WaitingForGexRequest { .. } => {
                 s.field("state", &"waiting for GEX request");
             }
@@ -95,6 +101,9 @@ impl ServerKex {
         output: &mut PacketWriter,
         handler: &mut H,
     ) -> Result<KexProgress<Self>, H::Error> {
+        #[cfg(feature = "algo-minimal")]
+        let _ = handler;
+
         match self.state {
             ServerKexState::Created => {
                 let Some(input) = input else {
@@ -150,7 +159,14 @@ impl ServerKex {
                 }
 
                 if kex.is_dh_gex() {
-                    self.state = ServerKexState::WaitingForGexRequest { names, kex };
+                    #[cfg(not(feature = "algo-minimal"))]
+                    {
+                        self.state = ServerKexState::WaitingForGexRequest { names, kex };
+                    }
+                    #[cfg(feature = "algo-minimal")]
+                    {
+                        return Err(Error::KexInit)?;
+                    }
                 } else {
                     self.state = ServerKexState::WaitingForDhInit { names, kex };
                 }
@@ -160,6 +176,7 @@ impl ServerKex {
                     reset_seqn: false,
                 })
             }
+            #[cfg(not(feature = "algo-minimal"))]
             ServerKexState::WaitingForGexRequest { names, mut kex } => {
                 let Some(input) = input else {
                     return Err(Error::KexInit)?;

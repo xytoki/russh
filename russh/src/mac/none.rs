@@ -2,6 +2,7 @@ use super::{Mac, MacAlgorithm};
 
 pub struct NoMacAlgorithm {}
 
+#[cfg_attr(feature = "algo-minimal", allow(dead_code))]
 pub struct NoMac {}
 
 impl MacAlgorithm for NoMacAlgorithm {

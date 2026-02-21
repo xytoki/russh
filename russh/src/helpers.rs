@@ -63,9 +63,10 @@ pub(crate) mod macros {
     pub(crate) use map_err;
 }
 
-#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+#[cfg(any(feature = "ring", feature = "aws-lc-rs", feature = "crypto-cng"))]
 pub(crate) use macros::map_err;
 
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 #[doc(hidden)]
 pub fn sign_with_hash_alg(key: &PrivateKeyWithHashAlg, data: &[u8]) -> ssh_key::Result<Vec<u8>> {
     Ok(match key.key_data() {
@@ -84,14 +85,17 @@ mod algorithm {
     use ssh_key::{Algorithm, HashAlg};
 
     pub trait AlgorithmExt {
+        #[cfg(not(feature = "client-minimal"))]
         fn hash_alg(&self) -> Option<HashAlg>;
         fn with_hash_alg(&self, hash_alg: Option<HashAlg>) -> Self;
+        #[cfg(not(feature = "client-minimal"))]
         fn new_certificate_ext(algo: &str) -> Result<Self, ssh_key::Error>
         where
             Self: Sized;
     }
 
     impl AlgorithmExt for Algorithm {
+        #[cfg(not(feature = "client-minimal"))]
         fn hash_alg(&self) -> Option<HashAlg> {
             match self {
                 Algorithm::Rsa { hash } => *hash,
@@ -106,6 +110,7 @@ mod algorithm {
             }
         }
 
+        #[cfg(not(feature = "client-minimal"))]
         fn new_certificate_ext(algo: &str) -> Result<Self, ssh_key::Error> {
             match algo {
                 "rsa-sha2-256-cert-v01@openssh.com" => Ok(Algorithm::Rsa {
@@ -123,4 +128,5 @@ mod algorithm {
 #[doc(hidden)]
 pub use algorithm::AlgorithmExt;
 
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use crate::keys::key::PrivateKeyWithHashAlg;

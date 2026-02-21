@@ -15,29 +15,40 @@
 //! This module exports cipher names for use with [Preferred].
 use std::collections::HashMap;
 use std::convert::TryFrom;
+#[cfg(not(feature = "algo-minimal"))]
 use std::marker::PhantomData;
 use std::sync::LazyLock;
 
 use delegate::delegate;
+#[cfg(not(feature = "algo-minimal"))]
 use digest::typenum::{U20, U32, U64};
+#[cfg(not(feature = "algo-minimal"))]
 use hmac::Hmac;
+#[cfg(not(feature = "algo-minimal"))]
 use sha1::Sha1;
+#[cfg(not(feature = "algo-minimal"))]
 use sha2::{Sha256, Sha512};
 use ssh_encoding::Encode;
 
+#[cfg(not(feature = "algo-minimal"))]
 use self::crypto::CryptoMacAlgorithm;
+#[cfg(not(feature = "algo-minimal"))]
 use self::crypto_etm::CryptoEtmMacAlgorithm;
 use self::none::NoMacAlgorithm;
 
+#[cfg(not(feature = "algo-minimal"))]
 mod crypto;
+#[cfg(not(feature = "algo-minimal"))]
 mod crypto_etm;
 mod none;
 
+#[cfg_attr(feature = "algo-minimal", allow(dead_code))]
 pub(crate) trait MacAlgorithm {
     fn key_len(&self) -> usize;
     fn make_mac(&self, key: &[u8]) -> Box<dyn Mac + Send>;
 }
 
+#[cfg_attr(feature = "algo-minimal", allow(dead_code))]
 pub(crate) trait Mac {
     fn mac_len(&self) -> usize;
     fn is_etm(&self) -> bool {
@@ -72,32 +83,45 @@ impl TryFrom<&str> for Name {
 /// `none`
 pub const NONE: Name = Name("none");
 /// `hmac-sha1`
+#[cfg(not(feature = "algo-minimal"))]
 pub const HMAC_SHA1: Name = Name("hmac-sha1");
 /// `hmac-sha2-256`
+#[cfg(not(feature = "algo-minimal"))]
 pub const HMAC_SHA256: Name = Name("hmac-sha2-256");
 /// `hmac-sha2-512`
+#[cfg(not(feature = "algo-minimal"))]
 pub const HMAC_SHA512: Name = Name("hmac-sha2-512");
 /// `hmac-sha1-etm@openssh.com`
+#[cfg(not(feature = "algo-minimal"))]
 pub const HMAC_SHA1_ETM: Name = Name("hmac-sha1-etm@openssh.com");
 /// `hmac-sha2-256-etm@openssh.com`
+#[cfg(not(feature = "algo-minimal"))]
 pub const HMAC_SHA256_ETM: Name = Name("hmac-sha2-256-etm@openssh.com");
 /// `hmac-sha2-512-etm@openssh.com`
+#[cfg(not(feature = "algo-minimal"))]
 pub const HMAC_SHA512_ETM: Name = Name("hmac-sha2-512-etm@openssh.com");
 
 pub(crate) static _NONE: NoMacAlgorithm = NoMacAlgorithm {};
+#[cfg(not(feature = "algo-minimal"))]
 pub(crate) static _HMAC_SHA1: CryptoMacAlgorithm<Hmac<Sha1>, U20> =
     CryptoMacAlgorithm(PhantomData, PhantomData);
+#[cfg(not(feature = "algo-minimal"))]
 pub(crate) static _HMAC_SHA256: CryptoMacAlgorithm<Hmac<Sha256>, U32> =
     CryptoMacAlgorithm(PhantomData, PhantomData);
+#[cfg(not(feature = "algo-minimal"))]
 pub(crate) static _HMAC_SHA512: CryptoMacAlgorithm<Hmac<Sha512>, U64> =
     CryptoMacAlgorithm(PhantomData, PhantomData);
+#[cfg(not(feature = "algo-minimal"))]
 pub(crate) static _HMAC_SHA1_ETM: CryptoEtmMacAlgorithm<Hmac<Sha1>, U20> =
     CryptoEtmMacAlgorithm(PhantomData, PhantomData);
+#[cfg(not(feature = "algo-minimal"))]
 pub(crate) static _HMAC_SHA256_ETM: CryptoEtmMacAlgorithm<Hmac<Sha256>, U32> =
     CryptoEtmMacAlgorithm(PhantomData, PhantomData);
+#[cfg(not(feature = "algo-minimal"))]
 pub(crate) static _HMAC_SHA512_ETM: CryptoEtmMacAlgorithm<Hmac<Sha512>, U64> =
     CryptoEtmMacAlgorithm(PhantomData, PhantomData);
 
+#[cfg(not(feature = "algo-minimal"))]
 pub const ALL_MAC_ALGORITHMS: &[&Name] = &[
     &NONE,
     &HMAC_SHA1,
@@ -108,16 +132,22 @@ pub const ALL_MAC_ALGORITHMS: &[&Name] = &[
     &HMAC_SHA512_ETM,
 ];
 
+#[cfg(feature = "algo-minimal")]
+pub const ALL_MAC_ALGORITHMS: &[&Name] = &[&NONE];
+
 pub(crate) static MACS: LazyLock<HashMap<&'static Name, &(dyn MacAlgorithm + Send + Sync)>> =
     LazyLock::new(|| {
         let mut h: HashMap<&'static Name, &(dyn MacAlgorithm + Send + Sync)> = HashMap::new();
         h.insert(&NONE, &_NONE);
-        h.insert(&HMAC_SHA1, &_HMAC_SHA1);
-        h.insert(&HMAC_SHA256, &_HMAC_SHA256);
-        h.insert(&HMAC_SHA512, &_HMAC_SHA512);
-        h.insert(&HMAC_SHA1_ETM, &_HMAC_SHA1_ETM);
-        h.insert(&HMAC_SHA256_ETM, &_HMAC_SHA256_ETM);
-        h.insert(&HMAC_SHA512_ETM, &_HMAC_SHA512_ETM);
+        #[cfg(not(feature = "algo-minimal"))]
+        {
+            h.insert(&HMAC_SHA1, &_HMAC_SHA1);
+            h.insert(&HMAC_SHA256, &_HMAC_SHA256);
+            h.insert(&HMAC_SHA512, &_HMAC_SHA512);
+            h.insert(&HMAC_SHA1_ETM, &_HMAC_SHA1_ETM);
+            h.insert(&HMAC_SHA256_ETM, &_HMAC_SHA256_ETM);
+            h.insert(&HMAC_SHA512_ETM, &_HMAC_SHA512_ETM);
+        }
         assert_eq!(h.len(), ALL_MAC_ALGORITHMS.len());
         h
     });

@@ -87,10 +87,16 @@
 //! messages sent through a `server::Handle` are processed when there
 //! is no incoming packet to read.
 
-#[cfg(not(any(feature = "ring", feature = "aws-lc-rs")))]
+// Stage 2: `crypto-cng` is only valid on Windows.
+#[cfg(all(feature = "crypto-cng", not(windows)))]
 compile_error!(
-    "`russh` requires enabling either the `ring` or `aws-lc-rs` feature as a crypto backend."
+    "The `crypto-cng` feature is only supported on Windows (CNG is a Windows-specific API)."
 );
 
-#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+#[cfg(not(any(feature = "ring", feature = "aws-lc-rs", feature = "crypto-cng")))]
+compile_error!(
+    "`russh` requires enabling at least one crypto backend feature: `ring`, `aws-lc-rs`, or `crypto-cng` (Windows-only)."
+);
+
+#[cfg(any(feature = "ring", feature = "aws-lc-rs", feature = "crypto-cng"))]
 include!("lib_inner.rs");

@@ -20,20 +20,23 @@ use std::convert::TryInto;
 #[cfg(feature = "aws-lc-rs")]
 use aws_lc_rs::{
     aead::{
-        Aad, Algorithm, BoundKey, NONCE_LEN, Nonce as AeadNonce, NonceSequence,
-        OpeningKey as AeadOpeningKey, SealingKey as AeadSealingKey, UnboundKey,
+        Aad, Algorithm, BoundKey, Nonce as AeadNonce, NonceSequence, OpeningKey as AeadOpeningKey,
+        SealingKey as AeadSealingKey, UnboundKey, NONCE_LEN,
     },
     error::Unspecified,
 };
+#[cfg(not(feature = "algo-minimal"))]
 use rand::RngCore;
 #[cfg(all(not(feature = "aws-lc-rs"), feature = "ring"))]
 use ring::{
     aead::{
-        Aad, Algorithm, BoundKey, NONCE_LEN, Nonce as AeadNonce, NonceSequence,
-        OpeningKey as AeadOpeningKey, SealingKey as AeadSealingKey, UnboundKey,
+        Aad, Algorithm, BoundKey, Nonce as AeadNonce, NonceSequence, OpeningKey as AeadOpeningKey,
+        SealingKey as AeadSealingKey, UnboundKey, NONCE_LEN,
     },
     error::Unspecified,
 };
+#[cfg(feature = "algo-minimal")]
+use ssh_key::rand_core::RngCore;
 
 use super::super::Error;
 use crate::keys::key::safe_rng;

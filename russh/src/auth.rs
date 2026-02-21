@@ -13,17 +13,24 @@
 // limitations under the License.
 //
 
+#[cfg(not(feature = "client-minimal"))]
 use std::future::Future;
 use std::ops::Deref;
 use std::str::FromStr;
+#[cfg(not(feature = "client-minimal"))]
 use std::sync::Arc;
 
+#[cfg(not(feature = "client-minimal"))]
 use ssh_key::{Certificate, HashAlg, PrivateKey};
+#[cfg(not(feature = "client-minimal"))]
 use thiserror::Error;
+#[cfg(not(feature = "client-minimal"))]
 use tokio::io::{AsyncRead, AsyncWrite};
 
+#[cfg(not(feature = "client-minimal"))]
 use crate::CryptoVec;
 use crate::helpers::NameList;
+#[cfg(not(feature = "client-minimal"))]
 use crate::keys::PrivateKeyWithHashAlg;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,6 +160,7 @@ impl AuthResult {
     }
 }
 
+#[cfg(not(feature = "client-minimal"))]
 #[cfg_attr(feature = "async-trait", async_trait::async_trait)]
 pub trait Signer: Sized {
     type Error: From<crate::SendError>;
@@ -165,6 +173,7 @@ pub trait Signer: Sized {
     ) -> impl Future<Output = Result<CryptoVec, Self::Error>> + Send;
 }
 
+#[cfg(not(feature = "client-minimal"))]
 #[derive(Debug, Error)]
 pub enum AgentAuthError {
     #[error(transparent)]
@@ -173,6 +182,7 @@ pub enum AgentAuthError {
     Key(#[from] crate::keys::Error),
 }
 
+#[cfg(not(feature = "client-minimal"))]
 #[cfg_attr(feature = "async-trait", async_trait::async_trait)]
 impl<R: AsyncRead + AsyncWrite + Unpin + Send + 'static> Signer
     for crate::keys::agent::client::AgentClient<R>
@@ -201,13 +211,16 @@ pub enum Method {
     Password {
         password: String,
     },
+    #[cfg(not(feature = "client-minimal"))]
     PublicKey {
         key: PrivateKeyWithHashAlg,
     },
+    #[cfg(not(feature = "client-minimal"))]
     OpenSshCertificate {
         key: Arc<PrivateKey>,
         cert: Certificate,
     },
+    #[cfg(not(feature = "client-minimal"))]
     FuturePublicKey {
         key: ssh_key::PublicKey,
         hash_alg: Option<HashAlg>,
@@ -222,16 +235,18 @@ pub enum Method {
 #[derive(Debug)]
 pub struct AuthRequest {
     pub methods: MethodSet,
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    #[cfg_attr(any(target_arch = "wasm32", feature = "client-minimal"), allow(dead_code))]
     pub partial_success: bool,
+    #[cfg_attr(feature = "client-minimal", allow(dead_code))]
     pub current: Option<CurrentRequest>,
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    #[cfg_attr(any(target_arch = "wasm32", feature = "client-minimal"), allow(dead_code))]
     pub rejection_count: usize,
 }
 
 #[doc(hidden)]
 #[derive(Debug)]
 pub enum CurrentRequest {
+    #[cfg(not(feature = "client-minimal"))]
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     PublicKey {
         #[allow(dead_code)]
@@ -241,7 +256,10 @@ pub enum CurrentRequest {
         sent_pk_ok: bool,
     },
     KeyboardInteractive {
-        #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+        #[cfg_attr(
+            any(target_arch = "wasm32", feature = "client-minimal"),
+            allow(dead_code)
+        )]
         submethods: String,
     },
 }

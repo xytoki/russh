@@ -48,7 +48,9 @@ use kex::ClientKex;
 use log::{debug, error, trace, warn};
 use russh_util::time::Instant;
 use ssh_encoding::Decode;
-use ssh_key::{Algorithm, Certificate, HashAlg, PrivateKey, PublicKey};
+use ssh_key::{Algorithm, HashAlg, PublicKey};
+#[cfg(not(feature = "client-minimal"))]
+use ssh_key::{Certificate, PrivateKey};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::pin;
 use tokio::sync::mpsc::{
@@ -62,6 +64,7 @@ use crate::channels::{
 };
 use crate::cipher::{self, OpeningKey, clear};
 use crate::kex::{KexAlgorithmImplementor, KexCause, KexProgress, SessionKexState};
+#[cfg(not(feature = "client-minimal"))]
 use crate::keys::PrivateKeyWithHashAlg;
 use crate::msg::{is_kex_msg, validate_server_msg_strict_kex};
 use crate::session::{CommonSession, EncryptedState, GlobalRequestResponse, NewKeys};
@@ -115,10 +118,12 @@ enum Reply {
         partial_success: bool,
     },
     ChannelOpenFailure,
+    #[cfg(not(feature = "client-minimal"))]
     SignRequest {
         key: ssh_key::PublicKey,
         data: CryptoVec,
     },
+    #[cfg(not(feature = "client-minimal"))]
     AuthInfoRequest {
         name: String,
         instructions: String,
@@ -362,6 +367,7 @@ impl<H: Handler> Handle<H> {
                         partial_success,
                     });
                 }
+                #[cfg(not(feature = "client-minimal"))]
                 Some(Reply::AuthInfoRequest {
                     name,
                     instructions,
@@ -410,6 +416,7 @@ impl<H: Handler> Handle<H> {
     /// `ssh-rsa`, `rsa-sha2-256`, and `rsa-sha2-512` "keys" in OpenSSH.
     /// You can use [Handle::best_supported_rsa_hash] to automatically
     /// figure out the best hash algorithm for RSA keys.
+    #[cfg(not(feature = "client-minimal"))]
     pub async fn authenticate_publickey<U: Into<String>>(
         &mut self,
         user: U,
@@ -427,6 +434,7 @@ impl<H: Handler> Handle<H> {
     }
 
     /// Perform public OpenSSH Certificate-based SSH authentication
+    #[cfg(not(feature = "client-minimal"))]
     pub async fn authenticate_openssh_cert<U: Into<String>>(
         &mut self,
         user: U,
@@ -447,6 +455,7 @@ impl<H: Handler> Handle<H> {
     /// Authenticate using a custom method that implements the
     /// [`Signer`][auth::Signer] trait. Currently, this crate only provides an
     /// implementation for an [SSH agent][crate::keys::agent::client::AgentClient].
+    #[cfg(not(feature = "client-minimal"))]
     pub async fn authenticate_publickey_with<U: Into<String>, S: auth::Signer>(
         &mut self,
         user: U,
@@ -1544,6 +1553,15 @@ async fn reply<H: Handler>(
                     } else {
                         // This is the initial kex
                         if let Some(server_host_key) = &server_host_key {
+                            // Host key pinning: check SHA-256 fingerprint if configured
+                            if let Some(ref pin_checker) = session.common.config.host_key_pin_checker {
+                                let fp = compute_host_key_fingerprint_sha256(server_host_key);
+                                if !pin_checker(&fp) {
+                                    debug!("host key pinning rejected the server key");
+                                    return Err(crate::Error::UnknownKey.into());
+                                }
+                            }
+
                             let check = handler.check_server_key(server_host_key).await?;
                             if !check {
                                 return Err(crate::Error::UnknownKey.into());
@@ -1661,7 +1679,6 @@ impl Default for GexParams {
 }
 
 /// The configuration of clients.
-#[derive(Debug)]
 pub struct Config {
     /// The client ID string sent at the beginning of the protocol.
     pub client_id: SshId,
@@ -1687,6 +1704,31 @@ pub struct Config {
     pub gex: GexParams,
     /// If active, invoke `set_nodelay(true)` on the ssh socket; disabled by default (i.e. Nagle's algorithm is active).
     pub nodelay: bool,
+    /// Host key pinning hook. If set, called during the handshake
+    /// with the SHA-256 fingerprint (raw 32 bytes) of the server's host key.
+    /// Return `true` to accept the key, `false` to reject.
+    /// The server's KEX signature is already verified before this is called.
+    pub host_key_pin_checker: Option<Box<dyn Fn(&[u8; 32]) -> bool + Send + Sync>>,
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("client_id", &self.client_id)
+            .field("limits", &self.limits)
+            .field("window_size", &self.window_size)
+            .field("maximum_packet_size", &self.maximum_packet_size)
+            .field("channel_buffer_size", &self.channel_buffer_size)
+            .field("preferred", &self.preferred)
+            .field("inactivity_timeout", &self.inactivity_timeout)
+            .field("keepalive_interval", &self.keepalive_interval)
+            .field("keepalive_max", &self.keepalive_max)
+            .field("anonymous", &self.anonymous)
+            .field("gex", &self.gex)
+            .field("nodelay", &self.nodelay)
+            .field("host_key_pin_checker", &self.host_key_pin_checker.as_ref().map(|_| "<fn>"))
+            .finish()
+    }
 }
 
 impl Default for Config {
@@ -1708,6 +1750,7 @@ impl Default for Config {
             anonymous: false,
             gex: Default::default(),
             nodelay: false,
+            host_key_pin_checker: None,
         }
     }
 }
@@ -2066,4 +2109,51 @@ pub trait Handler: Sized + Send {
             }
         }
     }
+}
+
+/// Compute the SHA-256 fingerprint of a server host key (over its raw wire-format blob).
+/// Returns the raw 32-byte hash. Useful for host key pinning.
+#[cfg(not(all(windows, feature = "crypto-cng")))]
+pub fn compute_host_key_fingerprint_sha256(key: &ssh_key::PublicKey) -> [u8; 32] {
+    use sha2::Digest;
+    match key.to_bytes() {
+        Ok(b) => {
+            let mut hasher = sha2::Sha256::new();
+            hasher.update(&b);
+            let result = hasher.finalize();
+            let mut out = [0u8; 32];
+            out.copy_from_slice(&result);
+            out
+        }
+        Err(e) => {
+            debug!("compute_host_key_fingerprint_sha256: to_bytes() failed: {e}");
+            [0u8; 32]
+        }
+    }
+}
+
+/// Compute the SHA-256 fingerprint of a server host key (over its raw wire-format blob).
+/// Returns the raw 32-byte hash. Useful for host key pinning.
+/// Uses Windows CNG (BCrypt) SHA-256 instead of RustCrypto sha2.
+#[cfg(all(windows, feature = "crypto-cng"))]
+pub fn compute_host_key_fingerprint_sha256(key: &ssh_key::PublicKey) -> [u8; 32] {
+    match key.to_bytes() {
+        Ok(b) => match crate::crypto_cng::sha256(&b) {
+            Ok(hash) => hash,
+            Err(e) => {
+                debug!("compute_host_key_fingerprint_sha256: CNG sha256 failed: {e}");
+                [0u8; 32]
+            }
+        },
+        Err(e) => {
+            debug!("compute_host_key_fingerprint_sha256: to_bytes() failed: {e}");
+            [0u8; 32]
+        }
+    }
+}
+
+/// Format a raw 32-byte SHA-256 hash as the standard `SHA256:...` base64 fingerprint string.
+pub fn format_fingerprint_base64(hash: &[u8; 32]) -> String {
+    use data_encoding::BASE64_NOPAD;
+    format!("SHA256:{}", BASE64_NOPAD.encode(hash))
 }

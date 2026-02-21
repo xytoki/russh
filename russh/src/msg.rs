@@ -14,7 +14,11 @@
 //
 // https://tools.ietf.org/html/rfc4253#section-12
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(feature = "client-minimal"),
+    any(feature = "ring", feature = "aws-lc-rs")
+))]
 pub use server::*;
 
 use crate::{strict_kex_violation, Error};
@@ -43,6 +47,7 @@ pub const KEX_DH_GEX_REPLY: u8 = 33;
 
 // PQ/T Hybrid Key Exchange with ML-KEM
 // https://datatracker.ietf.org/doc/draft-ietf-sshm-mlkem-hybrid-kex/
+#[cfg(feature = "pqc-mlkem")]
 pub const KEX_HYBRID_INIT: u8 = 30;
 #[allow(dead_code)]
 pub const KEX_HYBRID_REPLY: u8 = 31;
@@ -53,6 +58,7 @@ pub const USERAUTH_FAILURE: u8 = 51;
 pub const USERAUTH_SUCCESS: u8 = 52;
 pub const USERAUTH_BANNER: u8 = 53;
 
+#[cfg(not(feature = "client-minimal"))]
 pub const USERAUTH_INFO_RESPONSE: u8 = 61;
 
 // some numbers have same meaning
@@ -81,7 +87,11 @@ pub const SSH_OPEN_UNKNOWN_CHANNEL_TYPE: u8 = 3;
 #[allow(dead_code)]
 pub const SSH_OPEN_RESOURCE_SHORTAGE: u8 = 4;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(feature = "client-minimal"),
+    any(feature = "ring", feature = "aws-lc-rs")
+))]
 mod server {
     // https://tools.ietf.org/html/rfc4256#section-5
     pub const USERAUTH_INFO_REQUEST: u8 = 60;
@@ -115,6 +125,11 @@ fn validate_msg_strict_kex_alt_order(msg_type: u8, seqno: usize, orders: &[&[u8]
     valid
 }
 
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(feature = "client-minimal"),
+    any(feature = "ring", feature = "aws-lc-rs")
+))]
 pub(crate) fn validate_client_msg_strict_kex(msg_type: u8, seqno: usize) -> Result<(), Error> {
     if Some(false)
         == validate_msg_strict_kex_alt_order(

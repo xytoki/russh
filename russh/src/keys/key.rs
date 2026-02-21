@@ -1,3 +1,4 @@
+#[cfg(not(feature = "algo-minimal"))]
 use rand::rng;
 // Copyright 2016 Pierre-Étienne Meunier
 //
@@ -42,8 +43,31 @@ pub fn parse_public_key(mut p: &[u8]) -> Result<PublicKey, Error> {
 }
 
 /// Obtain a cryptographic-safe random number generator.
-pub fn safe_rng() -> impl rand::CryptoRng {
+#[cfg(not(feature = "algo-minimal"))]
+pub fn safe_rng() -> impl rand::CryptoRng + rand::RngCore {
     rng()
+}
+
+/// Fill buffer with cryptographically random bytes using Windows CNG.
+#[cfg(feature = "algo-minimal")]
+pub fn fill_random(buf: &mut [u8]) {
+    use windows::Win32::Security::Cryptography::{
+        BCryptGenRandom, BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+    };
+    // SAFETY: BCryptGenRandom with BCRYPT_USE_SYSTEM_PREFERRED_RNG writes to the provided buffer.
+    // This cannot fail on any modern Windows version.
+    unsafe {
+        BCryptGenRandom(None, buf, BCRYPT_USE_SYSTEM_PREFERRED_RNG)
+            .ok()
+            .expect("BCryptGenRandom failed");
+    }
+}
+
+/// Fill buffer with cryptographically random bytes.
+#[cfg(not(feature = "algo-minimal"))]
+pub fn fill_random(buf: &mut [u8]) {
+    use rand::RngCore;
+    safe_rng().fill_bytes(buf);
 }
 
 mod private_key_with_hash_alg {

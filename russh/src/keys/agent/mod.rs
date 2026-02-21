@@ -2,6 +2,7 @@
 pub mod client;
 mod msg;
 /// Write servers for SSH agents.
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod server;
 
 /// Constraints on how keys can be used

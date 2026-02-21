@@ -9,16 +9,20 @@ use elliptic_curve::sec1::{FromEncodedPoint, ModulusSize, ToEncodedPoint};
 use elliptic_curve::{AffinePoint, Curve, CurveArithmetic, FieldBytesSize};
 use log::debug;
 use p256::NistP256;
+#[cfg(not(feature = "algo-minimal"))]
 use p384::NistP384;
+#[cfg(not(feature = "algo-minimal"))]
 use p521::NistP521;
-use sha2::{Digest, Sha256, Sha384, Sha512};
+use sha2::{Digest, Sha256};
+#[cfg(not(feature = "algo-minimal"))]
+use sha2::{Sha384, Sha512};
 use ssh_encoding::{Encode, Writer};
 
-use super::{KexAlgorithm, SharedSecret as KexSharedSecret, encode_mpint};
-use crate::kex::{KexAlgorithmImplementor, KexType, compute_keys};
+use super::{encode_mpint, KexAlgorithm, SharedSecret as KexSharedSecret};
+use crate::kex::{compute_keys, KexAlgorithmImplementor, KexType};
 use crate::mac::{self};
 use crate::session::Exchange;
-use crate::{CryptoVec, cipher, msg};
+use crate::{cipher, msg, CryptoVec};
 
 pub struct EcdhNistP256KexType {}
 
@@ -33,8 +37,10 @@ impl KexType for EcdhNistP256KexType {
     }
 }
 
+#[cfg(not(feature = "algo-minimal"))]
 pub struct EcdhNistP384KexType {}
 
+#[cfg(not(feature = "algo-minimal"))]
 impl KexType for EcdhNistP384KexType {
     fn make(&self) -> KexAlgorithm {
         EcdhNistPKex::<NistP384, Sha384> {
@@ -46,8 +52,10 @@ impl KexType for EcdhNistP384KexType {
     }
 }
 
+#[cfg(not(feature = "algo-minimal"))]
 pub struct EcdhNistP521KexType {}
 
+#[cfg(not(feature = "algo-minimal"))]
 impl KexType for EcdhNistP521KexType {
     fn make(&self) -> KexAlgorithm {
         EcdhNistPKex::<NistP521, Sha512> {

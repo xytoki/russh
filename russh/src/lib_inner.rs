@@ -10,10 +10,13 @@ use ssh_encoding::{Decode, Encode};
 use thiserror::Error;
 
 #[cfg(test)]
+#[cfg(not(feature = "client-minimal"))]
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 mod tests;
 
 mod auth;
 
+#[cfg(not(feature = "client-minimal"))]
 mod cert;
 /// Cipher names
 pub mod cipher;
@@ -25,6 +28,9 @@ pub mod kex;
 pub mod mac;
 
 pub mod keys;
+
+#[cfg(all(windows, feature = "crypto-cng"))]
+pub(crate) mod crypto_cng;
 
 mod msg;
 mod negotiation;
@@ -64,7 +70,10 @@ mod parsing;
 mod session;
 
 /// Server side of this library.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(
+    not(any(target_arch = "wasm32", feature = "client-minimal")),
+    any(feature = "ring", feature = "aws-lc-rs")
+))]
 pub mod server;
 
 /// Client side of this library.
@@ -223,6 +232,7 @@ pub enum Error {
         sequence_number: usize,
     },
 
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     #[error("Signature: {0}")]
     Signature(#[from] signature::Error),
 
@@ -289,7 +299,9 @@ impl Default for Limits {
     }
 }
 
-pub use auth::{AgentAuthError, MethodKind, MethodSet, Signer};
+pub use auth::{MethodKind, MethodSet};
+#[cfg(not(feature = "client-minimal"))]
+pub use auth::{AgentAuthError, Signer};
 
 /// A reason for disconnection.
 #[allow(missing_docs)] // This should be relatively self-explanatory.
@@ -467,7 +479,10 @@ pub(crate) struct ChannelParams {
     sender_maximum_packet_size: u32,
     /// Has the other side confirmed the channel?
     pub confirmed: bool,
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    #[cfg_attr(
+        any(target_arch = "wasm32", feature = "client-minimal"),
+        allow(dead_code)
+    )]
     wants_reply: bool,
     /// (buffer, extended stream #, data offset in buffer)
     pending_data: std::collections::VecDeque<(CryptoVec, Option<u32>, usize)>,
